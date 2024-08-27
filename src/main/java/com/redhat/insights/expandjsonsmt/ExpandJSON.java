@@ -18,6 +18,7 @@ package com.redhat.insights.expandjsonsmt;
 
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.connect.connector.ConnectRecord;
+import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.transforms.Transformation;
 import org.apache.kafka.connect.transforms.util.SimpleConfig;
 import org.apache.kafka.connect.data.Field;
@@ -29,6 +30,7 @@ import org.apache.kafka.connect.errors.DataException;
 import org.bson.BsonArray;
 import org.bson.BsonDocument;
 import org.bson.BsonString;
+import org.bson.BsonValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -86,7 +88,7 @@ abstract class ExpandJSON<R extends ConnectRecord<R>> implements Transformation<
             }
 
             final Struct value = requireStruct(recordValue, PURPOSE);
-            final HashMap<String, BsonDocument> jsonParsedFields = parseJsonFields(value, sourceFields, delimiterSplit);
+            final HashMap<String, BsonValue> jsonParsedFields = parseJsonFields(value, sourceFields, delimiterSplit);
 
             final Schema updatedSchema = makeUpdatedSchema(null, value, jsonParsedFields);
             final Struct updatedValue = makeUpdatedValue(null, value, updatedSchema, jsonParsedFields);
@@ -114,11 +116,11 @@ abstract class ExpandJSON<R extends ConnectRecord<R>> implements Transformation<
      * @param sourceFields List of fields to parse JSON objects from.
      * @return Collection of parsed JSON objects with field names.
      */
-    private static HashMap<String, BsonDocument> parseJsonFields(Struct value, List<String> sourceFields,
+    private static HashMap<String, BsonValue> parseJsonFields(Struct value, List<String> sourceFields,
                                                                  String levelDelimiter) {
-        final HashMap<String, BsonDocument> bsons = new HashMap<>(sourceFields.size());
+        final HashMap<String, BsonValue> bsons = new HashMap<>(sourceFields.size());
         for(String field : sourceFields){
-            BsonDocument val;
+            BsonValue val;
             String[] pathArr = field.split(levelDelimiter);
             List<String> path = Arrays.asList(pathArr);
             final String jsonString = getStringValue(path, value);
@@ -129,18 +131,17 @@ abstract class ExpandJSON<R extends ConnectRecord<R>> implements Transformation<
                     if (jsonString.startsWith("{")) {
                         val = BsonDocument.parse(jsonString);
                     } else if (jsonString.startsWith("[")) {
-                        final BsonArray bsonArray = BsonArray.parse(jsonString);
-                        val = new BsonDocument();
-                        val.put("array", bsonArray);
+                        val = BsonArray.parse(jsonString);
                     } else {
                         String msg = String.format("Unable to parse filed '%s' starting with '%s'", field, jsonString.charAt(0));
                         throw new Exception(msg);
                     }
                 } catch (Exception ex) {
                     LOGGER.warn(ex.getMessage(), ex);
-                    val = new BsonDocument();
-                    val.put("value", new BsonString(jsonString));
-                    val.put("error", new BsonString(ex.getMessage()));
+                    BsonDocument errorDoc = new BsonDocument();
+                    errorDoc.put("value", new BsonString(jsonString));
+                    errorDoc.put("error", new BsonString(ex.getMessage()));
+                    val = errorDoc;
                 }
             }
             bsons.put(field, val);
@@ -155,15 +156,24 @@ abstract class ExpandJSON<R extends ConnectRecord<R>> implements Transformation<
      * @param jsonParsedFields Parsed JSON objects.
      * @return Output record with parsed JSON values.
      */
-    private Struct makeUpdatedValue(String parentKey, Struct value, Schema updatedSchema, HashMap<String, BsonDocument> jsonParsedFields) {
+    private Struct makeUpdatedValue(String parentKey, Struct value, Schema updatedSchema, HashMap<String, BsonValue> jsonParsedFields) {
         final Struct updatedValue = new Struct(updatedSchema);
         for (Field field : value.schema().fields()) {
             final Object fieldValue;
             final String absoluteKey = joinKeys(parentKey, field.name());
             if (jsonParsedFields.containsKey(absoluteKey)) {
-                final BsonDocument parsedValue = jsonParsedFields.get(absoluteKey);
-                fieldValue = DataConverter.jsonStr2Struct(parsedValue,
-                        updatedSchema.field(field.name()).schema());
+                final BsonValue parsedValue = jsonParsedFields.get(absoluteKey);
+                if (parsedValue == null) {
+                    fieldValue = null;
+                } else if (parsedValue.isDocument()) {
+                    fieldValue = DataConverter.jsonStr2Struct(parsedValue.asDocument(),
+                            updatedSchema.field(field.name()).schema());
+                } else if (parsedValue.isArray()) {
+                    fieldValue = DataConverter.bsonArray2ArrayList(parsedValue.asArray(),
+                            updatedSchema.field(field.name()).schema());
+                } else {
+                    throw new ConnectException("Invalid BSON type: " + parsedValue.getBsonType());
+                }
             } else if (field.schema().type().equals(Schema.Type.STRUCT)) {
                 fieldValue = makeUpdatedValue(absoluteKey, value.getStruct(field.name()),
                         updatedSchema.field(field.name()).schema(), jsonParsedFields);
@@ -188,13 +198,22 @@ abstract class ExpandJSON<R extends ConnectRecord<R>> implements Transformation<
      * @param jsonParsedFields Values of parsed json string fields.
      * @return New schema for output record.
      */
-    private Schema makeUpdatedSchema(String parentKey, Struct value, HashMap<String, BsonDocument> jsonParsedFields) {
+    private Schema makeUpdatedSchema(String parentKey, Struct value, HashMap<String, BsonValue> jsonParsedFields) {
         final SchemaBuilder builder = SchemaBuilder.struct();
         for (Field field : value.schema().fields()) {
             final Schema fieldSchema;
             final String absoluteKey = joinKeys(parentKey, field.name());
             if (jsonParsedFields.containsKey(absoluteKey)) {
-                fieldSchema = SchemaParser.bsonDocument2Schema(jsonParsedFields.get(absoluteKey));
+                BsonValue fieldValue = jsonParsedFields.get(absoluteKey);
+                if (fieldValue == null) {
+                    fieldSchema = SchemaParser.bsonDocument2Schema(null);
+                } else if (fieldValue.isDocument()) {
+                    fieldSchema = SchemaParser.bsonDocument2Schema(fieldValue.asDocument());
+                } else if (fieldValue.isArray()) {
+                    fieldSchema = SchemaParser.bsonArray2Schema(fieldValue.asArray());
+                } else {
+                    throw new ConnectException("Invalid BSON type: " + fieldValue.getBsonType());
+                }
             } else if (field.schema().type().equals(Schema.Type.STRUCT)) {
                 fieldSchema = makeUpdatedSchema(absoluteKey, value.getStruct(field.name()), jsonParsedFields);
             } else {

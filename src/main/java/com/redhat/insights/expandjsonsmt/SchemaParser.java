@@ -25,6 +25,10 @@ class SchemaParser {
         return bsonDocument2SchemaBuilder(doc).build();
     }
 
+    static Schema bsonArray2Schema(BsonArray arr) {
+        return bsonArray2SchemaBuilder(arr).build();
+    }
+
     private static SchemaBuilder bsonDocument2SchemaBuilder(BsonDocument doc) {
         final SchemaBuilder schemaBuilder = SchemaBuilder.struct().optional();
         if (doc != null) {
@@ -34,6 +38,11 @@ class SchemaParser {
         }
 
         return schemaBuilder;
+    }
+
+    private static SchemaBuilder bsonArray2SchemaBuilder(BsonArray arr) {
+//        final SchemaBuilder schemaBuilder = SchemaBuilder.struct().optional();
+        return SchemaBuilder.array(getArrayMemberSchema(arr)).optional();
     }
 
 

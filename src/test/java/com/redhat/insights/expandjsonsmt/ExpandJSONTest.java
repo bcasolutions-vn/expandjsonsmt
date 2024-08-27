@@ -214,8 +214,8 @@ public class ExpandJSONTest {
 
         final Struct updatedValue = (Struct) transformedRecord.value();
         assertEquals(3, updatedValue.schema().fields().size());
-        assertEquals(4, updatedValue.getStruct("arr1").getArray("array").size());
-        assertEquals(0, updatedValue.getStruct("arr2").getArray("array").size());
+        assertEquals(4, updatedValue.getArray("arr1").size());
+        assertEquals(0, updatedValue.getArray("arr2").size());
         assertNull(updatedValue.getStruct("arr3"));
     }
 
@@ -235,7 +235,7 @@ public class ExpandJSONTest {
         final SinkRecord transformedRecord = xform.apply(record);
 
         final Struct updatedValue = (Struct) transformedRecord.value();
-        final String expected = "Struct{arr=Struct{array=[null, 3, 5]}}";
+        final String expected = "Struct{arr=[null, 3, 5]}";
         assertEquals(expected, updatedValue.toString());
     }
 
@@ -261,7 +261,7 @@ public class ExpandJSONTest {
         final Struct updatedValue = (Struct) transformedRecord.value();
         assertEquals(3, updatedValue.schema().fields().size());
         assertEquals("msg", updatedValue.getStruct("obj1").getString("a"));
-        assertEquals(0, updatedValue.getStruct("arr").getArray("array").size());
+        assertEquals(0, updatedValue.getArray("arr").size());
         assertEquals("{malf",updatedValue.getStruct("obj2").getString("value"));
         assertTrue(updatedValue.getStruct("obj2").getString("error").startsWith("JSON reader"));
     }

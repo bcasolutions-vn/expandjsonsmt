@@ -5,12 +5,12 @@
 
 	<groupId>com.redhat.insights.expandjsonsmt</groupId>
 	<artifactId>kafka-connect-smt-expandjsonsmt</artifactId>
-	<version>0.0.7</version>
+	<version>0.0.8</version>
 
 	<repositories>
 		<repository>
 			<id>confluent</id>
-			<url>http://packages.confluent.io/maven/</url>
+			<url>https://packages.confluent.io/maven/</url>
 		</repository>
 	</repositories>
 

@@ -3,6 +3,7 @@ package com.redhat.insights.expandjsonsmt;
 import org.apache.kafka.connect.data.Field;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.Struct;
+import org.apache.kafka.connect.errors.ConnectException;
 import org.bson.BsonArray;
 import org.bson.BsonDocument;
 import org.bson.BsonValue;
@@ -91,7 +92,7 @@ class DataConverter {
         return struct;
     }
 
-    private static ArrayList<Object> bsonArray2ArrayList(BsonArray bsonArr, Schema schema) {
+    static ArrayList<Object> bsonArray2ArrayList(BsonArray bsonArr, Schema schema) {
         final ArrayList<Object> arr = new ArrayList<>(bsonArr.size());
         for(BsonValue bsonValue : bsonArr.getValues()) {
             arr.add(bsonValue2Object(bsonValue, schema.valueSchema()));
